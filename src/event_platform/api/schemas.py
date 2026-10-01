@@ -5,7 +5,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from event_platform.application.queries import EventPage, EventStats, TimeBucket
+from event_platform.application.queries import (
+    EventPage,
+    EventStats,
+    SearchResult,
+    TimeBucket,
+)
 from event_platform.domain.events import Event, new_event_id
 
 
@@ -101,5 +106,25 @@ class EventStatsOut(BaseModel):
             items=[
                 EventCountOut(bucket_start=c.bucket_start, event_type=c.event_type, count=c.count)
                 for c in stats.counts
+            ],
+        )
+
+
+class SearchHitOut(BaseModel):
+    score: float
+    event: EventOut
+
+
+class SearchResultOut(BaseModel):
+    total: int = Field(description="Matching events; counted exactly up to 10,000.")
+    items: list[SearchHitOut]
+
+    @classmethod
+    def from_domain(cls, result: SearchResult) -> "SearchResultOut":
+        return cls(
+            total=result.total,
+            items=[
+                SearchHitOut(score=hit.score, event=EventOut.from_domain(hit.event))
+                for hit in result.hits
             ],
         )

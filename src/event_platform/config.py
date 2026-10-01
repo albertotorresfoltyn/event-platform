@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     mongo_events_collection: str = "events"
     mongo_server_selection_timeout_ms: int = Field(default=5_000, gt=0)
 
+    elasticsearch_url: str = "http://localhost:9200"
+    elasticsearch_index: str = "events"
+    elasticsearch_shards: int = Field(default=1, gt=0)
+    elasticsearch_replicas: int = Field(default=0, ge=0)
+    elasticsearch_request_timeout_seconds: float = Field(default=5.0, gt=0)
+
     queue_max_size: int = Field(default=10_000, gt=0)
     queue_visibility_timeout_seconds: float = Field(default=30.0, gt=0)
     queue_max_receive_count: int = Field(default=5, gt=0)

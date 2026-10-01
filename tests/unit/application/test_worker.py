@@ -9,7 +9,7 @@ from event_platform.application.worker import EventWorker
 from event_platform.domain.events import Event
 from event_platform.infrastructure.queue.in_memory import InMemoryEventQueue
 from tests.factories import make_event
-from tests.fakes import FakeEventRepository, RecordingConsumer
+from tests.fakes import FakeEventIndexer, FakeEventRepository, RecordingConsumer
 from tests.polling import wait_until
 
 MAX_RECEIVE_COUNT = 3
@@ -24,7 +24,9 @@ def queue() -> InMemoryEventQueue:
 
 def make_worker(queue: InMemoryEventQueue, repository: FakeEventRepository) -> EventWorker:
     no_delay = ExponentialBackoff(base_seconds=1e-9, max_seconds=1e-9)
-    processor = EventProcessor(repository=repository, consumer=queue, backoff=no_delay)
+    processor = EventProcessor(
+        repository=repository, indexer=FakeEventIndexer(), consumer=queue, backoff=no_delay
+    )
     return EventWorker(queue, processor, batch_size=10, poll_wait_seconds=0)
 
 
@@ -77,7 +79,12 @@ async def test_started_worker_consumes_in_background_and_stops_cleanly(
     repository = FakeEventRepository()
     worker = EventWorker(
         queue,
-        EventProcessor(repository, queue, ExponentialBackoff(base_seconds=1, max_seconds=1)),
+        EventProcessor(
+            repository,
+            FakeEventIndexer(),
+            queue,
+            ExponentialBackoff(base_seconds=1, max_seconds=1),
+        ),
         batch_size=10,
         poll_wait_seconds=0.05,
     )
@@ -114,7 +121,9 @@ class FlakyConsumer(RecordingConsumer):
 
 async def test_worker_keeps_running_after_an_iteration_fails() -> None:
     consumer = FlakyConsumer()
-    processor = EventProcessor(FakeEventRepository(), consumer, ExponentialBackoff(1, 1))
+    processor = EventProcessor(
+        FakeEventRepository(), FakeEventIndexer(), consumer, ExponentialBackoff(1, 1)
+    )
     worker = EventWorker(
         consumer, processor, batch_size=1, poll_wait_seconds=0, error_pause_seconds=0
     )

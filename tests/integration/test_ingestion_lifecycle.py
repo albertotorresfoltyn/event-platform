@@ -73,3 +73,14 @@ async def test_ingested_event_is_returned_by_the_query_endpoints(client: TestCli
     assert stats["items"] == [
         {"bucket_start": "2026-10-01T00:00:00Z", "event_type": "conversion", "count": 1}
     ]
+
+
+async def test_ingested_event_becomes_searchable(client: TestClient) -> None:
+    payload = make_event_payload(metadata={"campaign": "Black Friday", "device": "tablet"})
+    event_id = client.post("/events", json=payload).json()["event_id"]
+
+    async def found() -> bool:
+        body = client.get("/events/search", params={"q": "black friday tablet"}).json()
+        return [item["event"]["event_id"] for item in body["items"]] == [event_id]
+
+    await wait_until(found)

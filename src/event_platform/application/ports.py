@@ -7,7 +7,13 @@ segregation): the API only needs to publish, the worker only needs to consume.
 from dataclasses import dataclass
 from typing import Protocol
 
-from event_platform.application.queries import Cursor, EventCount, EventFilter, TimeBucket
+from event_platform.application.queries import (
+    Cursor,
+    EventCount,
+    EventFilter,
+    SearchResult,
+    TimeBucket,
+)
 from event_platform.domain.events import Event
 
 
@@ -55,3 +61,13 @@ class EventReader(Protocol):
         self, event_filter: EventFilter, bucket: TimeBucket
     ) -> list[EventCount]:
         """Event counts grouped by (time bucket, event type), oldest bucket first."""
+
+
+class EventIndexer(Protocol):
+    async def index(self, event: Event) -> None:
+        """Make an event searchable. Must be idempotent (keyed by ``event_id``)."""
+
+
+class EventSearcher(Protocol):
+    async def search(self, text: str, event_filter: EventFilter, limit: int) -> SearchResult:
+        """Full-text search over event metadata, best match first."""

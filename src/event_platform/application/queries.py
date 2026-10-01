@@ -92,3 +92,15 @@ class EventStats:
     start: datetime
     end: datetime
     counts: list[EventCount]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchHit:
+    event: Event
+    score: float
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    total: int
+    hits: list[SearchHit]

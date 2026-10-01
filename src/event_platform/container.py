@@ -5,6 +5,7 @@ import logging
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
 
+from elasticsearch import AsyncElasticsearch
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.collection import AsyncCollection
 
@@ -12,8 +13,10 @@ from event_platform.application.backoff import ExponentialBackoff
 from event_platform.application.ingestion import EventIngestionService
 from event_platform.application.processing import EventProcessor
 from event_platform.application.querying import EventQueryService
+from event_platform.application.search import EventSearchService
 from event_platform.application.worker import EventWorker
 from event_platform.config import Settings
+from event_platform.infrastructure.elasticsearch.event_index import ElasticsearchEventIndex
 from event_platform.infrastructure.mongo.documents import Document
 from event_platform.infrastructure.mongo.event_reader import MongoEventReader
 from event_platform.infrastructure.mongo.event_repository import MongoEventRepository
@@ -27,10 +30,13 @@ logger = logging.getLogger(__name__)
 class Container:
     settings: Settings
     mongo_client: AsyncMongoClient[Document]
+    elasticsearch_client: AsyncElasticsearch
+    search_index: ElasticsearchEventIndex
     queue: InMemoryEventQueue
     repository: MongoEventRepository
     ingestion_service: EventIngestionService
     query_service: EventQueryService
+    search_service: EventSearchService
     worker: EventWorker
     _background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -38,6 +44,7 @@ class Container:
         # Index creation must not block startup: if MongoDB is down the API can still
         # accept events into the queue, and the worker will retry until it recovers.
         self._spawn(self._ensure_indexes())
+        self._spawn(self._ensure_search_index())
         if self.settings.worker_enabled:
             self.worker.start()
 
@@ -47,6 +54,7 @@ class Container:
             task.cancel()
         await asyncio.gather(*self._background_tasks, return_exceptions=True)
         await self.mongo_client.close()
+        await self.elasticsearch_client.close()
 
     def _spawn(self, coroutine: Coroutine[None, None, None]) -> None:
         task = asyncio.create_task(coroutine)
@@ -59,6 +67,12 @@ class Container:
             logger.info("MongoDB indexes ensured")
         except Exception:
             logger.exception("Could not ensure MongoDB indexes; queries may be slow")
+
+    async def _ensure_search_index(self) -> None:
+        try:
+            await self.search_index.ensure_index()
+        except Exception:
+            logger.exception("Could not ensure Elasticsearch index; search may be unavailable")
 
     @property
     def _events_collection(self) -> AsyncCollection[Document]:
@@ -75,6 +89,17 @@ def build_container(settings: Settings) -> Container:
     collection = mongo_client[settings.mongo_database][settings.mongo_events_collection]
     repository = MongoEventRepository(collection)
 
+    elasticsearch_client = AsyncElasticsearch(
+        settings.elasticsearch_url,
+        request_timeout=settings.elasticsearch_request_timeout_seconds,
+    )
+    search_index = ElasticsearchEventIndex(
+        elasticsearch_client,
+        settings.elasticsearch_index,
+        number_of_shards=settings.elasticsearch_shards,
+        number_of_replicas=settings.elasticsearch_replicas,
+    )
+
     queue = InMemoryEventQueue(
         max_size=settings.queue_max_size,
         visibility_timeout_seconds=settings.queue_visibility_timeout_seconds,
@@ -82,6 +107,7 @@ def build_container(settings: Settings) -> Container:
     )
     processor = EventProcessor(
         repository=repository,
+        indexer=search_index,
         consumer=queue,
         backoff=ExponentialBackoff(
             base_seconds=settings.retry_base_delay_seconds,
@@ -97,9 +123,12 @@ def build_container(settings: Settings) -> Container:
     return Container(
         settings=settings,
         mongo_client=mongo_client,
+        elasticsearch_client=elasticsearch_client,
+        search_index=search_index,
         queue=queue,
         repository=repository,
         ingestion_service=EventIngestionService(queue),
         query_service=EventQueryService(MongoEventReader(collection)),
+        search_service=EventSearchService(search_index),
         worker=worker,
     )

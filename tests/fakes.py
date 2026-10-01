@@ -1,7 +1,13 @@
 """In-memory test doubles for application ports."""
 
 from event_platform.application.ports import QueueMessage
-from event_platform.application.queries import Cursor, EventCount, EventFilter, TimeBucket
+from event_platform.application.queries import (
+    Cursor,
+    EventCount,
+    EventFilter,
+    SearchResult,
+    TimeBucket,
+)
 from event_platform.domain.events import Event
 
 
@@ -20,6 +26,22 @@ class FakeEventRepository:
             return False
         self.events[event.event_id] = event
         return True
+
+
+class FakeEventIndexer:
+    """Dict-backed search index that can be told to fail its next N index calls."""
+
+    def __init__(self, failures: int = 0) -> None:
+        self.documents: dict[str, Event] = {}
+        self.index_calls = 0
+        self.failures_left = failures
+
+    async def index(self, event: Event) -> None:
+        self.index_calls += 1
+        if self.failures_left > 0:
+            self.failures_left -= 1
+            raise ConnectionError("search unavailable")
+        self.documents[event.event_id] = event
 
 
 class RecordingConsumer:
@@ -61,3 +83,13 @@ class StubEventReader:
     ) -> list[EventCount]:
         self.count_calls.append((event_filter, bucket))
         return self.counts
+
+
+class StubEventSearcher:
+    def __init__(self, result: SearchResult | None = None) -> None:
+        self.result = result or SearchResult(total=0, hits=[])
+        self.calls: list[tuple[str, EventFilter, int]] = []
+
+    async def search(self, text: str, event_filter: EventFilter, limit: int) -> SearchResult:
+        self.calls.append((text, event_filter, limit))
+        return self.result

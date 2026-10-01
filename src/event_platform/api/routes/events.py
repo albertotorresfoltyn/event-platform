@@ -4,14 +4,26 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
-from event_platform.api.dependencies import EventFilterDep, IngestionServiceDep, QueryServiceDep
-from event_platform.api.schemas import EventAccepted, EventIn, EventPageOut, EventStatsOut
+from event_platform.api.dependencies import (
+    EventFilterDep,
+    IngestionServiceDep,
+    QueryServiceDep,
+    SearchServiceDep,
+)
+from event_platform.api.schemas import (
+    EventAccepted,
+    EventIn,
+    EventPageOut,
+    EventStatsOut,
+    SearchResultOut,
+)
 from event_platform.application.queries import Cursor, TimeBucket
 
 router = APIRouter(prefix="/events", tags=["events"])
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 500
+MAX_SEARCH_RESULTS = 100
 
 
 @router.post(
@@ -40,6 +52,20 @@ async def list_events(
     after = Cursor.decode(cursor) if cursor else None
     page = await service.list_events(event_filter, limit=limit, cursor=after)
     return EventPageOut.from_domain(page)
+
+
+@router.get("/search", responses={503: {"description": "Elasticsearch is unavailable"}})
+async def search_events(
+    q: Annotated[str, Query(min_length=1, description="Full-text query over event metadata")],
+    event_filter: EventFilterDep,
+    service: SearchServiceDep,
+    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_RESULTS)] = 20,
+) -> SearchResultOut:
+    """Full-text search across event metadata (Elasticsearch), best match first.
+
+    Supports simple query syntax: `"exact phrase"`, `-exclude`, `prefix*`, `a | b`.
+    """
+    return SearchResultOut.from_domain(await service.search(q, event_filter, limit))
 
 
 @router.get("/stats")

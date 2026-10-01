@@ -11,3 +11,11 @@ class QueueFullError(ApplicationError):
 
 class InvalidQueryError(ApplicationError):
     """A read request has inconsistent or out-of-range parameters."""
+
+
+class DependencyUnavailableError(ApplicationError):
+    """A backing service (MongoDB, Elasticsearch, Redis) cannot be reached."""
+
+    def __init__(self, dependency: str) -> None:
+        super().__init__(f"{dependency} is unavailable")
+        self.dependency = dependency

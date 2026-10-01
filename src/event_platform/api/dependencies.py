@@ -8,6 +8,7 @@ from fastapi import Depends, Query, Request
 from event_platform.application.ingestion import EventIngestionService
 from event_platform.application.queries import EventFilter
 from event_platform.application.querying import EventQueryService
+from event_platform.application.search import EventSearchService
 from event_platform.container import Container
 
 
@@ -25,6 +26,12 @@ def get_query_service(
     container: Annotated[Container, Depends(get_container)],
 ) -> EventQueryService:
     return container.query_service
+
+
+def get_search_service(
+    container: Annotated[Container, Depends(get_container)],
+) -> EventSearchService:
+    return container.search_service
 
 
 def get_event_filter(
@@ -46,3 +53,4 @@ def get_event_filter(
 IngestionServiceDep = Annotated[EventIngestionService, Depends(get_ingestion_service)]
 QueryServiceDep = Annotated[EventQueryService, Depends(get_query_service)]
 EventFilterDep = Annotated[EventFilter, Depends(get_event_filter)]
+SearchServiceDep = Annotated[EventSearchService, Depends(get_search_service)]
