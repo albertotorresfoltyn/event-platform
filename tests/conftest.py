@@ -9,7 +9,7 @@ from event_platform.main import create_app
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(app_name="event-platform-test", log_level="WARNING")
+    return Settings(app_name="event-platform-test", log_level="WARNING", worker_enabled=False)
 
 
 @pytest.fixture

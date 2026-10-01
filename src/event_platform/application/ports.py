@@ -31,3 +31,12 @@ class EventConsumer(Protocol):
 
     async def retry_later(self, receipt_handle: str, delay_seconds: float) -> None:
         """Make a message visible again after ``delay_seconds`` (backoff)."""
+
+
+class EventRepository(Protocol):
+    async def save(self, event: Event) -> bool:
+        """Persist an event idempotently.
+
+        Returns ``False`` when an event with the same ``event_id`` already exists,
+        which makes redelivered queue messages safe to process again.
+        """
