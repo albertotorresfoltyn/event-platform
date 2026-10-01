@@ -104,3 +104,14 @@ class SearchHit:
 class SearchResult:
     total: int
     hits: list[SearchHit]
+
+
+@dataclass(frozen=True, slots=True)
+class RealtimeStats:
+    """Event counts per type over a recent sliding window."""
+
+    generated_at: datetime
+    window_start: datetime
+    window_end: datetime
+    total: int
+    counts_by_type: dict[str, int]

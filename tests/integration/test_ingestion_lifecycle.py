@@ -1,6 +1,7 @@
 """Full request lifecycles: HTTP ingest -> queue -> worker -> MongoDB."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -84,3 +85,18 @@ async def test_ingested_event_becomes_searchable(client: TestClient) -> None:
         return [item["event"]["event_id"] for item in body["items"]] == [event_id]
 
     await wait_until(found)
+
+
+async def test_realtime_stats_reflect_ingested_events_after_cache_expiry(
+    client: TestClient,
+) -> None:
+    assert client.get("/events/stats/realtime").json()["total"] == 0  # cached for 1s
+
+    now = datetime.now(UTC).isoformat()
+    client.post("/events", json=make_event_payload(event_type="signup", timestamp=now))
+
+    async def counted() -> bool:
+        body = client.get("/events/stats/realtime").json()
+        return bool(body["counts_by_type"] == {"signup": 1})
+
+    await wait_until(counted)

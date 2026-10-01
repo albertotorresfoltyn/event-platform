@@ -67,3 +67,10 @@ def build_count_by_bucket_pipeline(
         },
         {"$sort": {"_id.bucket_start": 1, "_id.event_type": 1}},
     ]
+
+
+def build_count_by_type_pipeline(event_filter: EventFilter) -> list[dict[str, Any]]:
+    return [
+        {"$match": build_match(event_filter)},
+        {"$group": {"_id": "$event_type", "count": {"$sum": 1}}},
+    ]

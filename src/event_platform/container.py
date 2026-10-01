@@ -4,15 +4,18 @@ import asyncio
 import logging
 from collections.abc import Coroutine
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from elasticsearch import AsyncElasticsearch
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.collection import AsyncCollection
+from redis.asyncio import Redis
 
 from event_platform.application.backoff import ExponentialBackoff
 from event_platform.application.ingestion import EventIngestionService
 from event_platform.application.processing import EventProcessor
 from event_platform.application.querying import EventQueryService
+from event_platform.application.realtime_stats import RealtimeStatsService
 from event_platform.application.search import EventSearchService
 from event_platform.application.worker import EventWorker
 from event_platform.config import Settings
@@ -22,6 +25,7 @@ from event_platform.infrastructure.mongo.event_reader import MongoEventReader
 from event_platform.infrastructure.mongo.event_repository import MongoEventRepository
 from event_platform.infrastructure.mongo.indexes import ensure_indexes
 from event_platform.infrastructure.queue.in_memory import InMemoryEventQueue
+from event_platform.infrastructure.redis.realtime_stats_cache import RedisRealtimeStatsCache
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +36,13 @@ class Container:
     mongo_client: AsyncMongoClient[Document]
     elasticsearch_client: AsyncElasticsearch
     search_index: ElasticsearchEventIndex
+    redis_client: Redis
     queue: InMemoryEventQueue
     repository: MongoEventRepository
     ingestion_service: EventIngestionService
     query_service: EventQueryService
     search_service: EventSearchService
+    realtime_stats_service: RealtimeStatsService
     worker: EventWorker
     _background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -55,6 +61,7 @@ class Container:
         await asyncio.gather(*self._background_tasks, return_exceptions=True)
         await self.mongo_client.close()
         await self.elasticsearch_client.close()
+        await self.redis_client.aclose()
 
     def _spawn(self, coroutine: Coroutine[None, None, None]) -> None:
         task = asyncio.create_task(coroutine)
@@ -100,6 +107,24 @@ def build_container(settings: Settings) -> Container:
         number_of_replicas=settings.elasticsearch_replicas,
     )
 
+    redis_client = Redis.from_url(
+        settings.redis_url,
+        # Fail fast: a slow cache is worse than no cache, since we fall back to MongoDB.
+        socket_timeout=settings.redis_socket_timeout_seconds,
+        socket_connect_timeout=settings.redis_socket_timeout_seconds,
+    )
+    reader = MongoEventReader(collection)
+    realtime_stats_service = RealtimeStatsService(
+        reader,
+        RedisRealtimeStatsCache(
+            redis_client,
+            key_prefix=settings.redis_key_prefix,
+            window_seconds=settings.realtime_stats_window_seconds,
+        ),
+        window=timedelta(seconds=settings.realtime_stats_window_seconds),
+        ttl_seconds=settings.realtime_stats_ttl_seconds,
+    )
+
     queue = InMemoryEventQueue(
         max_size=settings.queue_max_size,
         visibility_timeout_seconds=settings.queue_visibility_timeout_seconds,
@@ -125,10 +150,12 @@ def build_container(settings: Settings) -> Container:
         mongo_client=mongo_client,
         elasticsearch_client=elasticsearch_client,
         search_index=search_index,
+        redis_client=redis_client,
         queue=queue,
         repository=repository,
         ingestion_service=EventIngestionService(queue),
-        query_service=EventQueryService(MongoEventReader(collection)),
+        query_service=EventQueryService(reader),
         search_service=EventSearchService(search_index),
+        realtime_stats_service=realtime_stats_service,
         worker=worker,
     )

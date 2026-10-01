@@ -143,6 +143,22 @@ async def test_count_by_bucket_groups_by_time_and_type(
     assert rows == expected
 
 
+async def test_count_by_type_counts_events_in_the_window(
+    reader: MongoEventReader, collection: AsyncCollection[Document]
+) -> None:
+    await seed(
+        collection,
+        make_event(event_type="click", timestamp=MONDAY),
+        make_event(event_type="click", timestamp=MONDAY + timedelta(minutes=30)),
+        make_event(event_type="pageview", timestamp=MONDAY + timedelta(minutes=45)),
+        make_event(event_type="pageview", timestamp=MONDAY + timedelta(hours=2)),
+    )
+
+    counts = await reader.count_by_type(EventFilter(start=MONDAY, end=MONDAY + timedelta(hours=1)))
+
+    assert counts == {"click": 2, "pageview": 1}
+
+
 async def test_ensure_indexes_is_idempotent(collection: AsyncCollection[Document]) -> None:
     await ensure_indexes(collection)
     await ensure_indexes(collection)

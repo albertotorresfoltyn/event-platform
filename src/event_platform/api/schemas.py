@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from event_platform.application.queries import (
     EventPage,
     EventStats,
+    RealtimeStats,
     SearchResult,
     TimeBucket,
 )
@@ -127,4 +128,31 @@ class SearchResultOut(BaseModel):
                 SearchHitOut(score=hit.score, event=EventOut.from_domain(hit.event))
                 for hit in result.hits
             ],
+        )
+
+
+class CacheInfoOut(BaseModel):
+    hit: bool
+    ttl_seconds: int
+
+
+class RealtimeStatsOut(BaseModel):
+    generated_at: datetime
+    window_start: datetime
+    window_end: datetime
+    total: int
+    counts_by_type: dict[str, int]
+    cache: CacheInfoOut
+
+    @classmethod
+    def from_domain(
+        cls, stats: RealtimeStats, *, hit: bool, ttl_seconds: int
+    ) -> "RealtimeStatsOut":
+        return cls(
+            generated_at=stats.generated_at,
+            window_start=stats.window_start,
+            window_end=stats.window_end,
+            total=stats.total,
+            counts_by_type=stats.counts_by_type,
+            cache=CacheInfoOut(hit=hit, ttl_seconds=ttl_seconds),
         )

@@ -8,6 +8,7 @@ from fastapi import Depends, Query, Request
 from event_platform.application.ingestion import EventIngestionService
 from event_platform.application.queries import EventFilter
 from event_platform.application.querying import EventQueryService
+from event_platform.application.realtime_stats import RealtimeStatsService
 from event_platform.application.search import EventSearchService
 from event_platform.container import Container
 
@@ -34,6 +35,12 @@ def get_search_service(
     return container.search_service
 
 
+def get_realtime_stats_service(
+    container: Annotated[Container, Depends(get_container)],
+) -> RealtimeStatsService:
+    return container.realtime_stats_service
+
+
 def get_event_filter(
     event_type: Annotated[str | None, Query(description="Exact event type")] = None,
     user_id: Annotated[str | None, Query(description="Exact user id")] = None,
@@ -54,3 +61,4 @@ IngestionServiceDep = Annotated[EventIngestionService, Depends(get_ingestion_ser
 QueryServiceDep = Annotated[EventQueryService, Depends(get_query_service)]
 EventFilterDep = Annotated[EventFilter, Depends(get_event_filter)]
 SearchServiceDep = Annotated[EventSearchService, Depends(get_search_service)]
+RealtimeStatsServiceDep = Annotated[RealtimeStatsService, Depends(get_realtime_stats_service)]

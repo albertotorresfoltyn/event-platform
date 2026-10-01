@@ -13,6 +13,7 @@ from event_platform.infrastructure.mongo.documents import Document, from_documen
 from event_platform.infrastructure.mongo.queries import (
     NEWEST_FIRST,
     build_count_by_bucket_pipeline,
+    build_count_by_type_pipeline,
     build_find_query,
 )
 
@@ -54,3 +55,9 @@ class MongoEventReader:
                 )
                 async for row in results
             ]
+
+    async def count_by_type(self, event_filter: EventFilter) -> dict[str, int]:
+        pipeline = build_count_by_type_pipeline(event_filter)
+        async with _translate_errors():
+            results = await self._collection.aggregate(pipeline)
+            return {row["_id"]: row["count"] async for row in results}

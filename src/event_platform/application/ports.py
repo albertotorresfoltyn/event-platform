@@ -11,6 +11,7 @@ from event_platform.application.queries import (
     Cursor,
     EventCount,
     EventFilter,
+    RealtimeStats,
     SearchResult,
     TimeBucket,
 )
@@ -62,6 +63,9 @@ class EventReader(Protocol):
     ) -> list[EventCount]:
         """Event counts grouped by (time bucket, event type), oldest bucket first."""
 
+    async def count_by_type(self, event_filter: EventFilter) -> dict[str, int]:
+        """Event counts grouped by event type."""
+
 
 class EventIndexer(Protocol):
     async def index(self, event: Event) -> None:
@@ -71,3 +75,11 @@ class EventIndexer(Protocol):
 class EventSearcher(Protocol):
     async def search(self, text: str, event_filter: EventFilter, limit: int) -> SearchResult:
         """Full-text search over event metadata, best match first."""
+
+
+class RealtimeStatsCache(Protocol):
+    """Raises ``DependencyUnavailableError`` when the cache cannot be reached."""
+
+    async def get(self) -> RealtimeStats | None: ...
+
+    async def set(self, stats: RealtimeStats, ttl_seconds: int) -> None: ...

@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from event_platform.application.queries import Cursor, EventFilter, TimeBucket
 from event_platform.infrastructure.mongo.queries import (
     build_count_by_bucket_pipeline,
+    build_count_by_type_pipeline,
     build_find_query,
     build_match,
 )
@@ -60,3 +61,10 @@ def test_stats_pipeline_truncates_timestamps_to_the_bucket() -> None:
     date_trunc = pipeline[1]["$group"]["_id"]["bucket_start"]["$dateTrunc"]
     assert date_trunc["unit"] == "week"
     assert date_trunc["startOfWeek"] == "monday"
+
+
+def test_count_by_type_pipeline_groups_matching_events_by_type() -> None:
+    assert build_count_by_type_pipeline(EventFilter(start=START)) == [
+        {"$match": {"timestamp": {"$gte": START}}},
+        {"$group": {"_id": "$event_type", "count": {"$sum": 1}}},
+    ]

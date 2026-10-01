@@ -2,12 +2,13 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Query, Response, status
 
 from event_platform.api.dependencies import (
     EventFilterDep,
     IngestionServiceDep,
     QueryServiceDep,
+    RealtimeStatsServiceDep,
     SearchServiceDep,
 )
 from event_platform.api.schemas import (
@@ -15,6 +16,7 @@ from event_platform.api.schemas import (
     EventIn,
     EventPageOut,
     EventStatsOut,
+    RealtimeStatsOut,
     SearchResultOut,
 )
 from event_platform.application.queries import Cursor, TimeBucket
@@ -79,3 +81,16 @@ async def event_stats(
     Missing bounds default to a recent window (24 hours, 30 days or 12 weeks).
     """
     return EventStatsOut.from_domain(await service.stats(event_filter, bucket))
+
+
+@router.get("/stats/realtime")
+async def realtime_stats(service: RealtimeStatsServiceDep, response: Response) -> RealtimeStatsOut:
+    """Event counts per type over the last window, served from a Redis cache (TTL-bound).
+
+    Falls back to MongoDB when Redis is unavailable. `X-Cache` reports HIT or MISS.
+    """
+    result = await service.summary()
+    response.headers["X-Cache"] = "HIT" if result.cache_hit else "MISS"
+    return RealtimeStatsOut.from_domain(
+        result.stats, hit=result.cache_hit, ttl_seconds=service.ttl_seconds
+    )

@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     elasticsearch_replicas: int = Field(default=0, ge=0)
     elasticsearch_request_timeout_seconds: float = Field(default=5.0, gt=0)
 
+    redis_url: str = "redis://localhost:6379/0"
+    redis_key_prefix: str = "event-platform"
+    redis_socket_timeout_seconds: float = Field(default=0.5, gt=0)
+    realtime_stats_ttl_seconds: int = Field(default=10, gt=0)
+    realtime_stats_window_seconds: int = Field(default=3_600, gt=0)
+
     queue_max_size: int = Field(default=10_000, gt=0)
     queue_visibility_timeout_seconds: float = Field(default=30.0, gt=0)
     queue_max_receive_count: int = Field(default=5, gt=0)
