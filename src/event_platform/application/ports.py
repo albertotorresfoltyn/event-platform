@@ -7,6 +7,7 @@ segregation): the API only needs to publish, the worker only needs to consume.
 from dataclasses import dataclass
 from typing import Protocol
 
+from event_platform.application.queries import Cursor, EventCount, EventFilter, TimeBucket
 from event_platform.domain.events import Event
 
 
@@ -40,3 +41,17 @@ class EventRepository(Protocol):
         Returns ``False`` when an event with the same ``event_id`` already exists,
         which makes redelivered queue messages safe to process again.
         """
+
+
+class EventReader(Protocol):
+    """Read side of the event store, kept apart from the write path (CQRS-lite)."""
+
+    async def find(
+        self, event_filter: EventFilter, limit: int, after: Cursor | None
+    ) -> list[Event]:
+        """Events matching the filter, newest first, strictly after ``after``."""
+
+    async def count_by_bucket(
+        self, event_filter: EventFilter, bucket: TimeBucket
+    ) -> list[EventCount]:
+        """Event counts grouped by (time bucket, event type), oldest bucket first."""

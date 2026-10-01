@@ -21,3 +21,14 @@ def to_document(event: Event, ingested_at: datetime) -> Document:
         "metadata": event.metadata,
         "ingested_at": ingested_at,
     }
+
+
+def from_document(document: Document) -> Event:
+    return Event(
+        event_id=document["_id"],
+        event_type=document["event_type"],
+        timestamp=document["timestamp"],
+        user_id=document["user_id"],
+        source_url=document["source_url"],
+        metadata=document.get("metadata", {}),
+    )

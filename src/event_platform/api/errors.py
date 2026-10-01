@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from event_platform.application.errors import QueueFullError
+from event_platform.application.errors import InvalidQueryError, QueueFullError
 from event_platform.domain.errors import InvalidEventError
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 QUEUE_FULL_RETRY_AFTER_SECONDS = 1
 
 
-async def _invalid_event(_: Request, exc: Exception) -> JSONResponse:
+async def _unprocessable(_: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": str(exc)}
     )
@@ -37,6 +37,7 @@ async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    app.add_exception_handler(InvalidEventError, _invalid_event)
+    app.add_exception_handler(InvalidEventError, _unprocessable)
+    app.add_exception_handler(InvalidQueryError, _unprocessable)
     app.add_exception_handler(QueueFullError, _queue_full)
     app.add_exception_handler(Exception, _unhandled)

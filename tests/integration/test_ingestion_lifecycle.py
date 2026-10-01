@@ -48,3 +48,28 @@ async def test_resubmitted_event_is_stored_once(
 
     await wait_until(queue_drained)
     assert await mongo_database["events"].count_documents({"_id": "evt-duplicate"}) == 1
+
+
+async def test_ingested_event_is_returned_by_the_query_endpoints(client: TestClient) -> None:
+    payload = make_event_payload(
+        event_type="conversion", user_id="user-query", timestamp="2026-10-01T10:30:00Z"
+    )
+    event_id = client.post("/events", json=payload).json()["event_id"]
+
+    async def listed() -> bool:
+        items = client.get("/events", params={"user_id": "user-query"}).json()["items"]
+        return [item["event_id"] for item in items] == [event_id]
+
+    await wait_until(listed)
+    stats = client.get(
+        "/events/stats",
+        params={
+            "bucket": "day",
+            "event_type": "conversion",
+            "start": "2026-10-01T00:00:00Z",
+            "end": "2026-10-02T00:00:00Z",
+        },
+    ).json()
+    assert stats["items"] == [
+        {"bucket_start": "2026-10-01T00:00:00Z", "event_type": "conversion", "count": 1}
+    ]

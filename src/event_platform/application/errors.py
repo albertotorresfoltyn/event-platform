@@ -7,3 +7,7 @@ class ApplicationError(Exception):
 
 class QueueFullError(ApplicationError):
     """The ingestion queue reached its capacity; producers should back off and retry."""
+
+
+class InvalidQueryError(ApplicationError):
+    """A read request has inconsistent or out-of-range parameters."""

@@ -1,17 +1,26 @@
 """Dependency container: the one place where concrete adapters are chosen and owned."""
 
-from dataclasses import dataclass
+import asyncio
+import logging
+from collections.abc import Coroutine
+from dataclasses import dataclass, field
 
 from pymongo import AsyncMongoClient
+from pymongo.asynchronous.collection import AsyncCollection
 
 from event_platform.application.backoff import ExponentialBackoff
 from event_platform.application.ingestion import EventIngestionService
 from event_platform.application.processing import EventProcessor
+from event_platform.application.querying import EventQueryService
 from event_platform.application.worker import EventWorker
 from event_platform.config import Settings
 from event_platform.infrastructure.mongo.documents import Document
+from event_platform.infrastructure.mongo.event_reader import MongoEventReader
 from event_platform.infrastructure.mongo.event_repository import MongoEventRepository
+from event_platform.infrastructure.mongo.indexes import ensure_indexes
 from event_platform.infrastructure.queue.in_memory import InMemoryEventQueue
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,15 +30,40 @@ class Container:
     queue: InMemoryEventQueue
     repository: MongoEventRepository
     ingestion_service: EventIngestionService
+    query_service: EventQueryService
     worker: EventWorker
+    _background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
     async def start(self) -> None:
+        # Index creation must not block startup: if MongoDB is down the API can still
+        # accept events into the queue, and the worker will retry until it recovers.
+        self._spawn(self._ensure_indexes())
         if self.settings.worker_enabled:
             self.worker.start()
 
     async def stop(self) -> None:
         await self.worker.stop()
+        for task in self._background_tasks:
+            task.cancel()
+        await asyncio.gather(*self._background_tasks, return_exceptions=True)
         await self.mongo_client.close()
+
+    def _spawn(self, coroutine: Coroutine[None, None, None]) -> None:
+        task = asyncio.create_task(coroutine)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _ensure_indexes(self) -> None:
+        try:
+            await ensure_indexes(self._events_collection)
+            logger.info("MongoDB indexes ensured")
+        except Exception:
+            logger.exception("Could not ensure MongoDB indexes; queries may be slow")
+
+    @property
+    def _events_collection(self) -> AsyncCollection[Document]:
+        database = self.mongo_client[self.settings.mongo_database]
+        return database[self.settings.mongo_events_collection]
 
 
 def build_container(settings: Settings) -> Container:
@@ -66,5 +100,6 @@ def build_container(settings: Settings) -> Container:
         queue=queue,
         repository=repository,
         ingestion_service=EventIngestionService(queue),
+        query_service=EventQueryService(MongoEventReader(collection)),
         worker=worker,
     )
