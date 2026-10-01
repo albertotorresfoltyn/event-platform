@@ -1,0 +1,1 @@
+"""Distributed event processing platform."""
