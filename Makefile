@@ -27,3 +27,10 @@ run:
 	uv run uvicorn event_platform.main:app --reload
 
 check: lint typecheck test
+
+.PHONY: up down
+up:
+	docker compose up -d --build --wait
+
+down:
+	docker compose down

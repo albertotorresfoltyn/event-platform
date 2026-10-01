@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,13 @@ class Settings(BaseSettings):
 
     app_name: str = "event-platform"
     log_level: str = "INFO"
+
+    admin_api_key: SecretStr | None = None
+    readiness_check_timeout_seconds: float = Field(default=1.0, gt=0)
+
+    rate_limit_enabled: bool = True
+    rate_limit_requests: int = Field(default=600, gt=0)
+    rate_limit_window_seconds: int = Field(default=60, gt=0)
 
     mongo_url: str = "mongodb://localhost:27017"
     mongo_database: str = "event_platform"

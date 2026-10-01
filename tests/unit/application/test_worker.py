@@ -57,7 +57,7 @@ async def test_transient_failures_are_retried_until_success(queue: InMemoryEvent
     await drain(make_worker(queue, repository), iterations=MAX_RECEIVE_COUNT)
 
     assert event.event_id in repository.events
-    assert queue.dead_letters == ()
+    assert await queue.list_dead_letters() == []
 
 
 async def test_event_exhausting_retries_lands_in_dead_letter_queue(
@@ -70,7 +70,7 @@ async def test_event_exhausting_retries_lands_in_dead_letter_queue(
     await drain(make_worker(queue, repository), iterations=MAX_RECEIVE_COUNT + 1)
 
     assert repository.events == {}
-    assert queue.dead_letters == (event,)
+    assert await queue.list_dead_letters() == [event]
 
 
 async def test_started_worker_consumes_in_background_and_stops_cleanly(

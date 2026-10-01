@@ -100,3 +100,10 @@ async def test_realtime_stats_reflect_ingested_events_after_cache_expiry(
         return bool(body["counts_by_type"] == {"signup": 1})
 
     await wait_until(counted)
+
+
+def test_readiness_is_ok_when_every_dependency_is_up(client: TestClient) -> None:
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"

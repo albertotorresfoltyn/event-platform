@@ -131,7 +131,7 @@ async def test_message_moves_to_dead_letters_after_max_receives(
         await queue.retry_later(message.receipt_handle, delay_seconds=0)
 
     assert await receive_now(queue) == []
-    assert queue.dead_letters == (event,)
+    assert await queue.list_dead_letters() == [event]
     assert queue.depth == 0
 
 
@@ -159,3 +159,36 @@ async def test_long_poll_returns_empty_after_wait_expires() -> None:
     queue = InMemoryEventQueue(max_size=10, visibility_timeout_seconds=30, max_receive_count=3)
 
     assert await queue.receive(max_messages=1, wait_seconds=0.05) == []
+
+
+async def dead_letter(queue: InMemoryEventQueue, clock: FakeClock) -> None:
+    """Publish one event and drive it into the dead-letter queue."""
+    await queue.publish(make_event())
+    for _ in range(MAX_RECEIVE_COUNT):
+        [message] = await receive_now(queue)
+        await queue.retry_later(message.receipt_handle, delay_seconds=0)
+    await receive_now(queue)
+
+
+async def test_redrive_moves_dead_letters_back_with_a_fresh_receive_count(
+    queue: InMemoryEventQueue, clock: FakeClock
+) -> None:
+    await dead_letter(queue, clock)
+
+    assert await queue.redrive_dead_letters() == 1
+
+    assert await queue.list_dead_letters() == []
+    [message] = await receive_now(queue)
+    assert message.receive_count == 1
+
+
+async def test_redrive_stops_at_capacity(queue: InMemoryEventQueue, clock: FakeClock) -> None:
+    await dead_letter(queue, clock)
+    await dead_letter(queue, clock)
+    for _ in range(2):
+        await queue.publish(make_event())
+
+    assert queue.is_full is False
+    assert await queue.redrive_dead_letters() == 1
+    assert queue.is_full is True
+    assert len(await queue.list_dead_letters()) == 1

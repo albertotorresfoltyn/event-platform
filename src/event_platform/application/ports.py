@@ -41,6 +41,13 @@ class EventConsumer(Protocol):
         """Make a message visible again after ``delay_seconds`` (backoff)."""
 
 
+class DeadLetterQueue(Protocol):
+    async def list_dead_letters(self) -> list[Event]: ...
+
+    async def redrive_dead_letters(self) -> int:
+        """Re-enqueue dead letters for another round of processing; returns how many."""
+
+
 class EventRepository(Protocol):
     async def save(self, event: Event) -> bool:
         """Persist an event idempotently.

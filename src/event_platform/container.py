@@ -12,6 +12,8 @@ from pymongo.asynchronous.collection import AsyncCollection
 from redis.asyncio import Redis
 
 from event_platform.application.backoff import ExponentialBackoff
+from event_platform.application.errors import QueueFullError
+from event_platform.application.health import ReadinessService
 from event_platform.application.ingestion import EventIngestionService
 from event_platform.application.processing import EventProcessor
 from event_platform.application.querying import EventQueryService
@@ -25,6 +27,7 @@ from event_platform.infrastructure.mongo.event_reader import MongoEventReader
 from event_platform.infrastructure.mongo.event_repository import MongoEventRepository
 from event_platform.infrastructure.mongo.indexes import ensure_indexes
 from event_platform.infrastructure.queue.in_memory import InMemoryEventQueue
+from event_platform.infrastructure.redis.rate_limiter import RedisFixedWindowRateLimiter
 from event_platform.infrastructure.redis.realtime_stats_cache import RedisRealtimeStatsCache
 
 logger = logging.getLogger(__name__)
@@ -43,6 +46,8 @@ class Container:
     query_service: EventQueryService
     search_service: EventSearchService
     realtime_stats_service: RealtimeStatsService
+    readiness_service: ReadinessService
+    rate_limiter: RedisFixedWindowRateLimiter | None
     worker: EventWorker
     _background_tasks: set[asyncio.Task[None]] = field(default_factory=set)
 
@@ -145,6 +150,42 @@ def build_container(settings: Settings) -> Container:
         batch_size=settings.worker_batch_size,
         poll_wait_seconds=settings.worker_poll_wait_seconds,
     )
+
+    async def check_mongo() -> None:
+        await mongo_client.admin.command("ping")
+
+    async def check_elasticsearch() -> None:
+        if not await elasticsearch_client.ping():
+            raise ConnectionError("Elasticsearch ping failed")
+
+    async def check_redis() -> None:
+        await redis_client.ping()
+
+    async def check_queue() -> None:
+        if queue.is_full:
+            raise QueueFullError("ingestion queue is full")
+
+    readiness_service = ReadinessService(
+        {
+            "queue": check_queue,
+            "mongodb": check_mongo,
+            "elasticsearch": check_elasticsearch,
+            "redis": check_redis,
+        },
+        critical=frozenset({"queue"}),
+        timeout_seconds=settings.readiness_check_timeout_seconds,
+    )
+    rate_limiter = (
+        RedisFixedWindowRateLimiter(
+            redis_client,
+            key_prefix=settings.redis_key_prefix,
+            limit=settings.rate_limit_requests,
+            window_seconds=settings.rate_limit_window_seconds,
+        )
+        if settings.rate_limit_enabled
+        else None
+    )
+
     return Container(
         settings=settings,
         mongo_client=mongo_client,
@@ -157,5 +198,7 @@ def build_container(settings: Settings) -> Container:
         query_service=EventQueryService(reader),
         search_service=EventSearchService(search_index),
         realtime_stats_service=realtime_stats_service,
+        readiness_service=readiness_service,
+        rate_limiter=rate_limiter,
         worker=worker,
     )

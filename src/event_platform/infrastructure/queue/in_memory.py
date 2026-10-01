@@ -67,12 +67,33 @@ class InMemoryEventQueue:
         return len(self._messages)
 
     @property
-    def dead_letters(self) -> tuple[Event, ...]:
-        return tuple(self._dead_letters)
+    def capacity(self) -> int:
+        return self._max_size
+
+    @property
+    def is_full(self) -> bool:
+        return len(self._messages) >= self._max_size
 
     async def publish(self, event: Event) -> None:
-        if len(self._messages) >= self._max_size:
+        if self.is_full:
             raise QueueFullError(f"queue is at capacity ({self._max_size} messages)")
+        self._enqueue(event)
+
+    async def list_dead_letters(self) -> list[Event]:
+        return list(self._dead_letters)
+
+    async def redrive_dead_letters(self) -> int:
+        """Move dead letters back to the queue (like SQS StartMessageMoveTask).
+
+        Moves as many as capacity allows, oldest first, with a fresh receive count.
+        """
+        moved = 0
+        while self._dead_letters and not self.is_full:
+            self._enqueue(self._dead_letters.pop(0))
+            moved += 1
+        return moved
+
+    def _enqueue(self, event: Event) -> None:
         self._messages[uuid.uuid4().hex] = _Envelope(event=event, visible_at=self._clock())
         self._message_available.set()
 
